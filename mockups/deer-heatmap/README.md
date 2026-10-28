@@ -3,6 +3,30 @@
 A single-file dashboard mockup showing deer movement as a heat map across three
 trail cameras near Bonfield, ON. Open `index.html` in any browser; there is no build step.
 
+## Google Maps satellite
+
+The map has two base layers: a hand-drawn illustration (works offline, no key) and
+Google satellite imagery. To use Google:
+
+1. In Google Cloud, create a browser API key with the **Maps JavaScript API** enabled
+   (billing must be on; the monthly free tier covers personal use).
+2. Restrict the key to the address you open the page from, e.g. `http://localhost:8000/*`.
+3. Serve the folder and open it with the key:
+
+   ```sh
+   cd mockups/deer-heatmap && python3 -m http.server 8000
+   # then visit http://localhost:8000/?key=YOUR_KEY
+   ```
+
+   Or click **Google satellite** above the map and paste the key. It is saved in that
+   browser only, and a rejected key is cleared automatically.
+
+Opening the file directly (`file://`) only works with an unrestricted key. The heat
+layer and camera markers sit on Google's map in a custom overlay, so they stay locked
+to the coordinates as you pan and zoom. Google's own HeatmapLayer has been retired,
+so it is not used. The Claude artifact preview cannot load Google Maps (its security
+policy blocks outside map scripts), so it shows the illustrated map with an explanation.
+
 Cameras (from the dropped pins):
 
 | Cam | Name        | Lat, Lon               |

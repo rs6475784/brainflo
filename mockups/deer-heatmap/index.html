@@ -142,9 +142,21 @@ h3.lbl small { letter-spacing: .04em; text-transform: none; font: 400 .75rem var
 .mapbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 9px 12px; background: var(--map-glass); color: var(--map-ink); font-size: .82rem; }
 .mapbar b { font: 600 .95rem var(--f-display); letter-spacing: .06em; text-transform: uppercase; }
 .mapbar .mono { color: var(--map-muted); font-size: .74rem; }
+.modes { display: inline-flex; border: 1px solid rgba(241, 243, 236, .28); border-radius: 6px; overflow: hidden; }
+.modes button { background: none; border: 0; color: var(--map-muted); padding: 4px 10px; font-size: .78rem; cursor: pointer; }
+.modes button[aria-pressed="true"] { background: var(--map-ink); color: #1B2A19; font-weight: 600; }
+.gm-form { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 10px 12px; background: var(--map-glass); color: var(--map-ink); font-size: .8rem; border-top: 1px solid rgba(241, 243, 236, .12); }
+.gm-form input[type=text] { flex: 1 1 220px; min-width: 0; font: .8rem var(--f-mono); padding: 6px 8px; border-radius: 5px; border: 1px solid rgba(241, 243, 236, .3); background: rgba(0, 0, 0, .35); color: var(--map-ink); }
+.gm-form .chk { display: inline-flex; gap: 6px; align-items: center; color: var(--map-muted); }
+.gm-form .msg { flex-basis: 100%; color: var(--map-muted); }
+.gm-form .msg.err { color: #FFB38A; }
+#gmap { position: absolute; inset: 0; }
+.mapwrap.google #map, .mapwrap.google .ov.north, .mapwrap.google .ov.scale { display: none; }
+.mapwrap.google .ov.legend { bottom: 30px; }
+.mapwrap.google .ov.coords { bottom: 84px; }
 .mapwrap { position: relative; width: min(100%, calc((100vh - 90px) * 0.71)); margin-inline: auto; aspect-ratio: 923 / 1300; max-width: 100%; }
 #map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
-.ov { position: absolute; color: var(--map-ink); background: var(--map-glass); border-radius: 7px; padding: 7px 9px; font-size: .74rem; line-height: 1.3; pointer-events: none; }
+.ov { position: absolute; z-index: 3; color: var(--map-ink); background: var(--map-glass); border-radius: 7px; padding: 7px 9px; font-size: .74rem; line-height: 1.3; pointer-events: none; }
 .ov.north { top: 10px; left: 10px; display: grid; place-items: center; width: 38px; height: 44px; padding: 4px; }
 .ov.north svg { width: 18px; height: 22px; }
 .ov.north span { font: 700 .8rem/1 var(--f-display); }
@@ -301,7 +313,18 @@ h3.lbl small { letter-spacing: .04em; text-transform: none; font: 400 .75rem var
         <div class="mapbar">
           <b>Movement heat map</b>
           <span class="mono" id="map-status"></span>
+          <div class="modes" role="group" aria-label="Base map">
+            <button type="button" id="mode-ill" aria-pressed="true">Illustrated</button>
+            <button type="button" id="mode-gm" aria-pressed="false">Google satellite</button>
+          </div>
         </div>
+        <form class="gm-form" id="gm-form" hidden>
+          <label for="gm-key">Google Maps API key</label>
+          <input type="text" id="gm-key" autocomplete="off" spellcheck="false" placeholder="AIza...">
+          <label class="chk"><input type="checkbox" id="gm-remember" checked> Remember on this device</label>
+          <button class="btn" type="submit">Load map</button>
+          <span class="msg" id="gm-msg">The key needs the Maps JavaScript API enabled. It is kept only in this browser.</span>
+        </form>
         <div class="mapwrap" id="mapwrap">
           <canvas id="map" aria-label="Aerial map with deer movement heat overlay"></canvas>
           <div id="markers"></div>
@@ -831,19 +854,118 @@ function sizeMap() {
   drawMap();
 }
 function buildMarkers() {
-  $('#markers').innerHTML = CAMS.map(c => `<button type="button" class="cam ${c.side}" id="cam-${c.id}" data-cam="${c.id}" aria-pressed="false" style="left:${(c.x - FRAME.x) / FRAME.w * 100}%;top:${(c.y - FRAME.y) / FRAME.h * 100}%"><span class="dot">${c.id}</span><span class="tag"><b>${c.name}</b><span class="mono"><span id="cam-n-${c.id}">0</span> detections</span></span></button>`).join('');
+  $('#markers').innerHTML = CAMS.map(c => `<button type="button" class="cam ${c.side}" id="cam-${c.id}" data-cam="${c.id}" aria-pressed="false"><span class="dot">${c.id}</span><span class="tag"><b>${c.name}</b><span class="mono"><span id="cam-n-${c.id}">0</span> detections</span></span></button>`).join('');
   $$('.cam').forEach(b => b.addEventListener('click', () => selectCam(selCam === b.dataset.cam ? null : b.dataset.cam)));
+  placeMarkersIll();
+}
+function placeMarkersIll() {
+  for (const c of CAMS) {
+    const b = $('#cam-' + c.id); $('#markers').append(b);
+    b.style.left = (c.x - FRAME.x) / FRAME.w * 100 + '%'; b.style.top = (c.y - FRAME.y) / FRAME.h * 100 + '%';
+  }
+}
+function showCoords(lat, lon) {
+  let best = null, bd = Infinity;
+  for (const c of CAMS) { const d = Math.hypot((c.lat - lat) * 111200, (c.lon - lon) * 111200 * Math.cos(lat * Math.PI / 180)); if (d < bd) { bd = d; best = c; } }
+  const el = $('#coords'); el.hidden = false;
+  el.innerHTML = `${lat.toFixed(5)}, ${lon.toFixed(5)}<br>${Math.round(bd)} m to Cam ${best.id}`;
 }
 mapCv.addEventListener('pointermove', ev => {
   const rect = mapCv.getBoundingClientRect();
   const fx = FRAME.x + (ev.clientX - rect.left) / K, fy = FRAME.y + (ev.clientY - rect.top) / K;
-  const g = toGeo(fx, fy);
-  let best = null, bd = Infinity;
-  for (const c of CAMS) { const d = Math.hypot(c.x - fx, c.y - fy) / PX_PER_M; if (d < bd) { bd = d; best = c; } }
-  const el = $('#coords'); el.hidden = false;
-  el.innerHTML = `${g.lat.toFixed(5)}, ${g.lon.toFixed(5)}<br>${Math.round(bd)} m to Cam ${best.id}`;
+  const g = toGeo(fx, fy); showCoords(g.lat, g.lon);
 });
 mapCv.addEventListener('pointerleave', () => { $('#coords').hidden = true; });
+
+/* ---------- Google Maps base layer ---------- */
+// The heat canvas and camera buttons are reused inside a custom OverlayView,
+// so both base maps share one renderer. Google's own HeatmapLayer is retired.
+const GM = { map: null, overlay: null, loading: false, key: null };
+const KEY_STORE = 'bonfield.gmapsKey';
+const frameNW = toGeo(FRAME.x, FRAME.y), frameSE = toGeo(FRAME.x + FRAME.w, FRAME.y + FRAME.h);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } },
+};
+function gmMsg(t, err) { const m = $('#gm-msg'); m.textContent = t; m.classList.toggle('err', !!err); }
+function setPressed(mode) { $('#mode-ill').setAttribute('aria-pressed', mode === 'ill'); $('#mode-gm').setAttribute('aria-pressed', mode === 'gm'); }
+function setMode(mode) {
+  const wrap = $('#mapwrap');
+  setPressed(mode);
+  if (mode === 'ill') {
+    wrap.classList.remove('google'); $('#gm-form').hidden = true;
+    placeMarkersIll();
+    if (GM.overlay) GM.overlay.setMap(null);
+    const g = $('#gmap'); if (g) g.hidden = true;
+    drawMap();
+    return;
+  }
+  if (GM.map) { $('#gmap').hidden = false; GM.overlay.setMap(GM.map); wrap.classList.add('google'); return; }
+  const key = GM.key || new URLSearchParams(location.search).get('key') || store.get(KEY_STORE);
+  $('#gm-form').hidden = false;
+  if (!key) { gmMsg('Paste a browser key with the Maps JavaScript API enabled. It is kept only in this browser.'); $('#gm-key').focus(); return; }
+  GM.key = key; $('#gm-key').value = key; loadGoogle(key);
+}
+function gmFail(t, badKey) {
+  GM.loading = false; clearTimeout(GM.timer);
+  if (badKey) store.set(KEY_STORE, null);
+  placeMarkersIll(); // Google calls onRemove later, so pull the markers out first
+  if (GM.overlay) GM.overlay.setMap(null);
+  const g = $('#gmap'); if (g) g.remove();
+  GM.map = null; GM.overlay = null;
+  setMode('ill'); setPressed('gm'); $('#gm-form').hidden = false; gmMsg(t, true);
+}
+function loadGoogle(key) {
+  if (GM.loading) return;
+  if (window.google && window.google.maps && window.google.maps.Map) { initGoogle(); return; }
+  GM.loading = true; gmMsg('Loading Google Maps...');
+  window.gm_authFailure = () => gmFail('Google rejected this key. Check that the Maps JavaScript API and billing are enabled, and that this address is allowed in the key\'s website restrictions.', true);
+  GM.timer = setTimeout(() => { if (GM.loading) gmFail('Google Maps is taking too long to load. Check the network connection, then try again.'); }, 15000);
+  window.__bonfieldGM = () => { GM.loading = false; clearTimeout(GM.timer); try { initGoogle(); } catch (err) { console.error(err); gmFail('Google Maps loaded but could not start: ' + err.message); } };
+  const s = document.createElement('script');
+  s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=__bonfieldGM`;
+  s.async = true;
+  s.onerror = () => { s.remove(); gmFail('Google Maps could not load. The Claude preview blocks outside map scripts, so open mockups/deer-heatmap/index.html from the repo in a browser instead.'); };
+  document.head.append(s);
+}
+function initGoogle() {
+  const g = document.createElement('div'); g.id = 'gmap'; $('#mapwrap').prepend(g);
+  const gm = google.maps;
+  GM.map = new gm.Map(g, {
+    mapTypeId: 'satellite', tilt: 0, heading: 0, clickableIcons: false, gestureHandling: 'cooperative',
+    streetViewControl: false, fullscreenControl: false, rotateControl: false, scaleControl: true,
+    mapTypeControl: true, mapTypeControlOptions: { position: gm.ControlPosition.TOP_LEFT, mapTypeIds: ['satellite', 'hybrid', 'terrain'] },
+  });
+  GM.map.fitBounds(new gm.LatLngBounds({ lat: frameSE.lat, lng: frameNW.lon }, { lat: frameNW.lat, lng: frameSE.lon }), 0);
+  class HeatOverlay extends gm.OverlayView {
+    onAdd() {
+      const panes = this.getPanes();
+      Object.assign(heatCv.style, { position: 'absolute', opacity: 0.9, pointerEvents: 'none' });
+      panes.overlayLayer.append(heatCv);
+      for (const c of CAMS) { const b = $('#cam-' + c.id); panes.overlayMouseTarget.append(b); gm.OverlayView.preventMapHitsAndGesturesFrom(b); }
+    }
+    draw() {
+      const pr = this.getProjection(); if (!pr) return;
+      const nw = pr.fromLatLngToDivPixel(new gm.LatLng(frameNW.lat, frameNW.lon));
+      const se = pr.fromLatLngToDivPixel(new gm.LatLng(frameSE.lat, frameSE.lon));
+      Object.assign(heatCv.style, { left: nw.x + 'px', top: nw.y + 'px', width: (se.x - nw.x) + 'px', height: (se.y - nw.y) + 'px' });
+      for (const c of CAMS) { const p = pr.fromLatLngToDivPixel(new gm.LatLng(c.lat, c.lon)), b = $('#cam-' + c.id); b.style.left = p.x + 'px'; b.style.top = p.y + 'px'; }
+    }
+    onRemove() { heatCv.remove(); }
+  }
+  GM.overlay = new HeatOverlay(); GM.overlay.setMap(GM.map);
+  GM.map.addListener('mousemove', ev => showCoords(ev.latLng.lat(), ev.latLng.lng()));
+  GM.map.addListener('mouseout', () => { $('#coords').hidden = true; });
+  $('#mapwrap').classList.add('google'); $('#gm-form').hidden = true; setPressed('gm');
+}
+$('#mode-ill').addEventListener('click', () => setMode('ill'));
+$('#mode-gm').addEventListener('click', () => setMode('gm'));
+$('#gm-form').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const k = $('#gm-key').value.trim(); if (!k) { gmMsg('Paste a key first.', true); return; }
+  if ($('#gm-remember').checked) store.set(KEY_STORE, k);
+  GM.key = k; loadGoogle(k);
+});
 
 /* ---------- trail camera photo renderer ---------- */
 function drawDeer(ctx, x, y, s, dir, o) {
@@ -1228,6 +1350,7 @@ new ResizeObserver(() => renderTimeline()).observe($('#tl-svg'));
 window.addEventListener('resize', () => { if (!$('#lb').hidden) drawLB(); });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { cssW = 0; sizeMap(); if (selCam) renderDetail(); });
 sizeMap(); render();
+if (new URLSearchParams(location.search).get('key') || store.get(KEY_STORE)) setMode('gm');
 })();
 </script>
 </body>
